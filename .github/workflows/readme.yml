@@ -1,0 +1,47 @@
+name: Sync README.md
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 16 * * *'
+
+jobs:
+  Sync:
+
+    name: Sync README.md
+
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Compare with Gitlab
+        run: |
+          GITLAB=$(wget -qO- https://gitlab.com/fscarmen/warp/-/raw/main/README.md | md5sum)
+          GITHUB=$(wget -qO- https://raw.githubusercontent.com/fscarmen/warp-sh/main/README.md | md5sum)
+          if [ "$GITLAB" != "$GITHUB" ]; then
+            wget -O README.md https://gitlab.com/fscarmen/warp/-/raw/main/README.md
+            git checkout --orphan tmp_work
+            git branch -d ${GITHUB_REF#refs/heads/}
+            echo "DATE=$(date "+%Y/%m/%d %H:%M:%S")" >> $GITHUB_ENV
+          fi
+
+      - name: Update README.md
+        if: ${{ env.DATE != '' }}
+        uses: stefanzweifel/git-auto-commit-action@v4.16.0
+        with:
+          commit_message: Auto renew by Github Actions, ${{ env.DATE }}
+          create_branch: true
+          branch: main
+          push_options: --force
+
+      - name: Delete old workflow runs
+        uses: MajorScruffy/delete-old-workflow-runs@v0.3.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          repository: ${{ github.repository }}
+          older-than-seconds: 3600
