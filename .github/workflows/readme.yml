@@ -1,0 +1,71 @@
+name: Sync README files
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 16 * * *'
+
+jobs:
+  Sync:
+
+    name: Sync README files
+
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Compare with Gitlab
+        run: |
+          # 检查 README.md
+          GITLAB_README=$(wget -qO- https://gitlab.com/fscarmen/warp/-/raw/main/README.md | md5sum)
+          GITHUB_README=$(wget -qO- https://raw.githubusercontent.com/fscarmen/warp-sh/main/README.md | md5sum)
+          
+          # 检查 README_EN.md
+          GITLAB_README_EN=$(wget -qO- https://gitlab.com/fscarmen/warp/-/raw/main/README_EN.md | md5sum)
+          GITHUB_README_EN=$(wget -qO- https://raw.githubusercontent.com/fscarmen/warp-sh/main/README_EN.md | md5sum)
+          
+          # 设置是否需要更新的标志
+          NEED_UPDATE=false
+          
+          if [ "$GITLAB_README" != "$GITHUB_README" ]; then
+            echo "README.md differs, updating..."
+            wget -O README.md https://gitlab.com/fscarmen/warp/-/raw/main/README.md
+            NEED_UPDATE=true
+          fi
+          
+          if [ "$GITLAB_README_EN" != "$GITHUB_README_EN" ]; then
+            echo "README_EN.md differs, updating..."
+            wget -O README_EN.md https://gitlab.com/fscarmen/warp/-/raw/main/README_EN.md
+            NEED_UPDATE=true
+          fi
+          
+          if [ "$NEED_UPDATE" = true ]; then
+            git checkout --orphan tmp_work
+            git branch -d ${GITHUB_REF#refs/heads/}
+            echo "DATE=$(date "+%Y/%m/%d %H:%M:%S")" >> $GITHUB_ENV
+            echo "NEED_UPDATE=true" >> $GITHUB_ENV
+          else
+            echo "No updates needed"
+            echo "NEED_UPDATE=false" >> $GITHUB_ENV
+          fi
+
+      - name: Update README files
+        if: ${{ env.NEED_UPDATE == 'true' }}
+        uses: stefanzweifel/git-auto-commit-action@v6.0.1
+        with:
+          commit_message: Auto renew README files by Github Actions, ${{ env.DATE }}
+          create_branch: true
+          branch: main
+          push_options: --force
+
+      - name: Delete old workflow runs
+        uses: MajorScruffy/delete-old-workflow-runs@v0.3.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          repository: ${{ github.repository }}
+          older-than-seconds: 3600
